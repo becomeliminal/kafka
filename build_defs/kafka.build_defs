@@ -3,15 +3,16 @@ def kafka(name:str, version:str, scala_version:str="2.13", hashes:list=[], visib
     Downloads Apache Kafka distribution.
 
     Usage:
-        kafka(name = "kafka", version = "3.7.0", visibility = ["PUBLIC"])
+        kafka(name = "kafka", version = "3.9.1", visibility = ["PUBLIC"])
 
-    Access outputs:
-        //third_party/binary:kafka|bin    - bin directory with shell scripts
-        //third_party/binary:kafka|libs   - libs directory with jar files
+    Access:
+        //third_party/binary:kafka - full kafka directory containing bin/ and libs/
+
+    The bin/ scripts use relative paths to libs/, so both must stay together.
 
     Args:
         name (str): Name of the rule.
-        version (str): Kafka version (e.g., "3.7.0").
+        version (str): Kafka version (e.g., "3.9.1").
         scala_version (str): Scala version. Defaults to "2.13".
         hashes (list): Optional hashes to verify download.
         visibility (list): Visibility declaration.
@@ -25,23 +26,14 @@ def kafka(name:str, version:str, scala_version:str="2.13", hashes:list=[], visib
         hashes = hashes,
     )
 
-    install = build_rule(
-        name = tag(name, "install"),
-        srcs = [download],
-        outs = {
-            "bin": [f"{kafka_dir}/bin"],
-            "libs": [f"{kafka_dir}/libs"],
-        },
-        cmd = "tar -xzf $SRC",
-        building_description = f"Extracting Kafka v{version}...",
-    )
-
-    filegroup(
+    # Single output - whole directory
+    # Avoids RBE deadlock from filegroup referencing same target twice
+    build_rule(
         name = name,
-        srcs = [
-            install + "|bin",
-            install + "|libs",
-        ],
-        deps = [install],
+        srcs = [download],
+        outs = [kafka_dir],
+        cmd = "tar -xzf $SRC",
+        binary = True,
         visibility = visibility,
+        building_description = f"Extracting Kafka v{version}...",
     )
