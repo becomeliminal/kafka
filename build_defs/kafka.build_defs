@@ -1,3 +1,28 @@
+def _fetch_archive(url:str, dest:str, hashes:list):
+    """Shell: download url to dest, check its sha256, extract, and delete dest.
+
+    dest is in the action temp dir, so the tarball is not an output. A
+    remote_file cannot arrange that: its output is the archive. Any listed
+    hash may match; no hashes skips the check. The action is local and
+    unsandboxed, because the fetch needs the network.
+    """
+    qdest = "'" + dest.replace("'", "'\\''") + "'"
+    qurl = "'" + url.replace("'", "'\\''") + "'"
+    fetch = "curl -fsSL --retry 5 --retry-delay 2 -o %s %s" % (qdest, qurl)
+    extract = "tar -xzf %s && rm -f %s" % (qdest, qdest)
+    if not hashes:
+        return "%s && %s" % (fetch, extract)
+    digest = "digest=$(if command -v sha256sum >/dev/null 2>&1; then sha256sum %s | awk '{print $1}'; else openssl dgst -sha256 %s | awk '{print $NF}'; fi)" % (qdest, qdest)
+    checks = []
+    for h in hashes:
+        if ":" in h:
+            _, _, h = h.rpartition(":")
+            h = h.strip()
+        checks.append("[ \"$digest\" = '%s' ]" % h)
+    verify = "{ { " + " || ".join(checks) + "; } || { echo \"bad hash for " + url + ": $digest\" >&2; exit 1; }; }"
+    return " && ".join([fetch, digest, verify, extract])
+
+
 def kafka(name:str, version:str, scala_version:str="2.13", hashes:list=[], visibility:list=[]):
     """
     Downloads Apache Kafka distribution.
@@ -20,20 +45,20 @@ def kafka(name:str, version:str, scala_version:str="2.13", hashes:list=[], visib
     kafka_dir = f"kafka_{scala_version}-{version}"
     url = f"https://downloads.apache.org/kafka/{version}/{kafka_dir}.tgz"
 
-    download = remote_file(
-        name = tag(name, "download"),
-        url = url,
-        hashes = hashes,
-    )
-
-    # Single output - whole directory
-    # Avoids RBE deadlock from filegroup referencing same target twice
+    # Single output, the distribution directory. The tarball is removed before
+    # the action finishes, so it is not a second output beside it. Fetching
+    # here rather than in a remote_file is what makes that stick: that
+    # target's output is the archive, and deleting it makes Please fetch it
+    # again. The archive's top directory is this output, so it is extracted in
+    # the action root rather than a scratch directory. One output also avoids
+    # the RBE deadlock a filegroup hit by referencing the same target twice.
     build_rule(
         name = name,
-        srcs = [download],
         outs = [kafka_dir],
-        cmd = "tar -xzf $SRC",
+        cmd = _fetch_archive(url, "kafka.tgz", hashes),
         binary = True,
+        local = True,
+        sandbox = False,
         visibility = visibility,
         building_description = f"Extracting Kafka v{version}...",
     )
