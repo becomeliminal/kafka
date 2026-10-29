@@ -43,7 +43,7 @@ def kafka(name:str, version:str, scala_version:str="2.13", hashes:list=[], visib
         visibility (list): Visibility declaration.
     """
     kafka_dir = f"kafka_{scala_version}-{version}"
-    url = f"https://downloads.apache.org/kafka/{version}/{kafka_dir}.tgz"
+    url = f"https://dlcdn.apache.org/kafka/{version}/{kafka_dir}.tgz"
 
     # Single output, the distribution directory. The tarball is removed before
     # the action finishes, so it is not a second output beside it. Fetching
